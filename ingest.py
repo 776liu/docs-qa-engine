@@ -100,7 +100,7 @@ def ingest_documents(force_rebuild=False):
 
     files_to_process = new_file + updated_file
     if not files_to_process:
-        logger,info("没有需要处理的文件")
+        logger.info("没有需要处理的文件")
         return
 
 
