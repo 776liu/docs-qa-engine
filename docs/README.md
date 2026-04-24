@@ -3,19 +3,9 @@
 基于 FastAPI + ChromaDB + DeepSeek 的本地知识库问答系统。
 
 ## 核心功能
-- 📄 支持 PDF/TXT/Markdown 文档上传与自动入库
+- 📄 支持 PDF/TXT 文档上传与自动入库
 - 🔍 语义检索 + LLM 生成答案
-- 💬 多轮对话历史管理
 - ⚡ 增量更新（MD5 去重）
-- 🔐 API Token 鉴权
-- 📝 完整日志记录
-
-## 技术栈
-- **Web 框架**: FastAPI
-- **向量数据库**: ChromaDB
-- **Embedding 模型**: sentence-transformers/all-MiniLM-L6-v2
-- **LLM**: DeepSeek API
-- **文档处理**: LangChain
 
 ## ✅ 已完成
     RAG 核心链路：文档加载 → 切分 → 向量化 → 检索 → 生成
@@ -23,23 +13,9 @@
     增量更新：MD5 去重，只处理变化文件
     API 接口：
     POST /ask（问答）
-    POST /ask/stream （流式输出回答） 4.23新增
-    GET /session/{session_id}/history 获取指定会话的对话历史 4.23新增
     POST /upload（上传并自动入库）
     GET /（健康检查）
     性能优化：延迟加载、离线模式、批量计算
-
-## 4.23新增
-    - Markdown 支持：新增可上传 .md 文档
-    - 流式输出，逐字 streaming
-    - 对话历史：添加 session 管理，每次都是独立问答
-    - 缓存：相同问题会重复检索和调用 LLM
-    
-## 4.24新增
-    - 添加logger日志记录    
-    - 添加API的Token鉴权认证
-    - 添加config管理硬编码路径
-
 
 ## 快速启动
 

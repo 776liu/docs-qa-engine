@@ -2,11 +2,14 @@ import os
 import glob
 import torch
 import hashlib
+import shutil
 
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import chromadb
+from config import settings
+from logger import logger
 
 
 def get_file_hash(file_path):
@@ -23,29 +26,32 @@ def ingest_documents(force_rebuild=False):
     存入向量库
     :param force_rebuild: 是否强制重建（清空旧数据）
     """
-    docs_dir = "docs"
-    client = chromadb.PersistentClient(path="./chroma_db")
+    logger.info("开始处理文档...", force_rebuild={force_rebuild})
+
+    docs_dir = settings.DOCS_DIR
+    client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
     # 获取已存在集合，查找比对之后决定重建还是新增
     try:
         collection = client.get_collection("rag_collection")
         if force_rebuild:
             client.delete_collection("rag_collection")
             collection = client.create_collection("rag_collection")
-            print("已清空旧数据库, 开始重新构建向量数据库...")
+            logger.info("已清空旧数据库, 开始重新构建向量数据库...")
         else:
-            print("已找到旧数据库，开始追加向量数据库...")
+            logger.info("已找到旧数据库，开始追加向量数据库...")
     except:
         # 首次运行
         collection = client.create_collection("rag_collection")
-        print("已创建数据库, 开始构建向量数据库...")
+        logger.info("已创建数据库, 开始构建向量数据库...")
 
     file_paths = (glob.glob(os.path.join(docs_dir, "*.txt")) +
-              glob.glob(os.path.join(docs_dir, "*.pdf")))
+                    glob.glob(os.path.join(docs_dir, "*.pdf")) +
+                    glob.glob(os.path.join(docs_dir,"*.md")))
 
     if not file_paths:
-        print("没有找到文件")
+        logger.warning("没有找到文件")
         return
-    print(f"找到 {len(file_paths)} 个文件")
+    logger.info(f"找到 {len(file_paths)} 个文件")
 
     # 元数据对比
     existing_metadata = collection.get(include=["metadatas"])
@@ -88,12 +94,13 @@ def ingest_documents(force_rebuild=False):
                     unchanged_file.append(file_path)
             else:
                 new_file.append(file_path)
-    print(f"新增: {len(new_file)}, 更新: {len(updated_file)}, 未变化: {len(unchanged_file)}")
+
+    logger.info(f"新增: {len(new_file)}, 更新: {len(updated_file)}, 未变化: {len(unchanged_file)}")
 
 
     files_to_process = new_file + updated_file
     if not files_to_process:
-        print("没有需要处理的文件")
+        logger,info("没有需要处理的文件")
         return
 
 
@@ -118,21 +125,21 @@ def ingest_documents(force_rebuild=False):
                 doc.metadata['file_hash'] = file_hashes[os.path.basename(file_path)]
 
             documents.extend(docs)
-            print(f"已处理文件: {file_path}")
+            logger.info(f"已处理文件: {file_path}")
         except Exception as e:
-            print(f"处理文件 {file_path} : {e}")
+            logger.error(f"处理文件 {file_path} : {e}")
 
     if not documents:
-        print("没有需要处理的文档")
+        logger.warning("没有需要处理的文档")
         return
 
     # 切分
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500,
-                                                   chunk_overlap=50,
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=settings.CHUNK_SIZE,
+                                                   chunk_overlap=settings.CHUNK_OVERLAP,
                                                    length_function=len,
                                                    separators=["\n\n", "\n", "。", "；", "，", " ", ""])
     docs = text_splitter.split_documents(documents)
-    print(f"切分{len(docs)}个文档")
+    logger.info(f"切分{len(docs)}个文档")
 
     # 提取文本和生成ID
     texts = [doc.page_content for doc in docs]
@@ -146,12 +153,13 @@ def ingest_documents(force_rebuild=False):
     # 在写入前，先查询 Chroma 中是否已存在该 ID。如果存在，则跳过；
     # 如果不存在，再执行 add 操作。这能极大减少重复工作。
     # 批量计算 Embedding (GPU加速)
-    print("正在计算向量...")
+    logger.info("正在计算向量...")
     # 检测有没有 NVIDIA 显卡，有就用 GPU 加速计算向量，没有就用 CPU。
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    logger.info(f"使用设备: {device}")
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device=device)
     embeddings = model.encode(texts, batch_size=128, show_progress_bar=True)
-    print(f"向量计算完成，维度: {embeddings.shape}")
+    logger.info(f"向量计算完成，维度: {embeddings.shape}")
 
     # 直接使用前面已获取的 collection，不要重新创建
     collection.add(
@@ -189,7 +197,7 @@ def ingest_documents(force_rebuild=False):
 #
 # vectorstore.persist()
 
-    print("向量数据库已保存")
+    logger.info("向量数据库已保存")
 
 if __name__ == "__main__":
     import sys
